@@ -1,0 +1,204 @@
+console.log('Script started!'); // Log script start
+const puppeteer = require('puppeteer'); // Import Puppeteer for browser automation
+const XLSX = require('xlsx'); // Import XLSX for Excel file handling
+
+async function downloadTradingViewLogs() { // Main function to download TradingView logs
+ console.log('Starting browser...'); // Log browser startup
+ 
+ const browser = await puppeteer.launch({ // Launch Puppeteer browser
+   headless: false, // Show browser window (not headless)
+   defaultViewport: null, // Use default viewport
+   args: ['--start-maximized'] // Start browser maximized
+ });
+ 
+ const page = await browser.newPage(); // Create new browser page
+ 
+ console.log('Going to chart...'); // Log navigation start
+ await page.goto('https://www.tradingview.com/chart/7gesKywx/?lang=en'); // Navigate to TradingView chart
+ 
+ await page.setCookie({ // Set session cookie
+   name: 'sessionid', // Cookie name
+   value: 'ulljiodqjfeobmx9brj5a2odsqlfh9tf', // Session ID value
+   domain: '.tradingview.com' // Cookie domain
+ });
+
+ await page.reload(); // Reload page to apply cookie
+ await new Promise(r => setTimeout(r, 5000)); // Wait 5 seconds for page to load
+ 
+ // Check if alerts panel is already open
+ console.log('Checking if alerts panel is open...'); // Log checking status
+ const alertsPanelSelector = 'body > div.js-rootresizer__contents > div > div.layout__area--right > div > div.widgetbar-pages > div.widgetbar-pagescontent > div.widgetbar-page.active'; // Selector for active alerts panel
+ const isAlertsPanelOpen = await page.$(alertsPanelSelector); // Check if alerts panel exists
+ 
+ if (!isAlertsPanelOpen) { // If alerts panel is not open
+   console.log('Alerts panel is closed, opening it...'); // Log opening alerts
+   await page.click('body > div.js-rootresizer__contents > div > div.layout__area--right > div > div.widgetbar-tabs > div > div > div > div > button:nth-child(2)'); // Click alerts button
+   await new Promise(r => setTimeout(r, 2000)); // Wait 2 seconds for alerts panel to open
+ } else {
+   console.log('Alerts panel is already open'); // Log that panel is already open
+ }
+ 
+ console.log('Clicking list tab...'); // Log clicking list tab
+ await page.click('#list'); // Click list tab
+ await new Promise(r => setTimeout(r, 2000)); // Wait 2 seconds for list to load
+
+ const alertSelector = 'body > div.js-rootresizer__contents > div > div.layout__area--right > div > div.widgetbar-pages > div.widgetbar-pagescontent > div.widgetbar-page.active > div > div.widgetbar-widgetbody > div > div.wrapper-G90Hl2iS > div.list-G90Hl2iS > div > div'; // Selector for alert items
+ const scrollContainer = 'body > div.js-rootresizer__contents > div > div.layout__area--right > div > div.widgetbar-pages > div.widgetbar-pagescontent > div.widgetbar-page.active > div > div.widgetbar-widgetbody > div > div.wrapper-G90Hl2iS > div.list-G90Hl2iS'; // Selector for scrollable container
+ 
+ const allData = []; // Array to store all extracted data
+ let totalProcessed = 0; // Counter for total processed alerts
+ let lastProcessedText = ''; // Store text of last processed alert
+ 
+ while (true) { // Main processing loop
+   const alerts = await page.$$(alertSelector); // Get all visible alert elements
+   console.log(`Visible alerts: ${alerts.length}`); // Log count of visible alerts
+   
+   let foundAndProcessed = false; // Flag to track if we processed an alert this iteration
+   
+   // Find the alert to process
+   for (let i = 0; i < alerts.length; i++) { // Loop through visible alerts
+     const alertText = await alerts[i].evaluate(el => el.innerText); // Get alert text
+     
+     // If it's the first alert or if this is the one after the last processed
+     if ((totalProcessed === 0 && i === 0) || // Check if first alert
+         (lastProcessedText && i > 0 && await alerts[i-1].evaluate(el => el.innerText) === lastProcessedText)) { // Check if this follows last processed
+       
+       totalProcessed++; // Increment processed counter
+       console.log(`Processing alert ${totalProcessed}...`); // Log processing status
+       
+       await alerts[i].hover(); // Hover over the alert
+       await new Promise(r => setTimeout(r, 1500)); // Wait 1.5 seconds for tooltip
+
+       const tooltipText = await page.evaluate(() => { // Extract tooltip text
+         const all = document.querySelectorAll('*'); // Get all elements
+         for (const el of all) { // Loop through elements
+           if (el.innerText && el.innerText.includes('Strategy')) { // Find element with Strategy prefix
+             return el.innerText; // Return the tooltip text
+           }
+         }
+         return ''; // Return empty if not found
+       });
+       
+       if (tooltipText) { // If tooltip text found
+         const lines = tooltipText.split('\n').filter(l => l.trim()); // Split into lines and remove empty ones
+         const rowData = []; // Array for this alert's data
+         
+         // Find the alert name (it's the first text after many initial lines)
+         // Look for the line with Strategy to orient ourselves
+         const strategyIndex = lines.findIndex(l => l.includes('Strategy') && l.includes('(')); // Find Strategy line
+         if (strategyIndex > 0) { // If found and not first line
+           // The alert name is the line before StrategyA
+           const alertName = lines[strategyIndex - 1]; // Get alert name
+           rowData.push(alertName); // Add to row data
+           console.log(`Alert ${totalProcessed} - Name: ${alertName}`); // Log alert name
+         }
+         
+         // Find the line with Strategy and parentheses
+         const strategyLineIndex = lines.findIndex(l => l.includes('Strategy') && l.includes('(')); // Find strategy line
+         if (strategyLineIndex !== -1) { // If strategy line found
+           const strategyLine = lines[strategyLineIndex]; // Get strategy line
+           
+           // Extract strategy name (everything before the parenthesis)
+           const strategyNameMatch = strategyLine.match(/^(Strategy[^(]*)/); // Match Strategy + name
+           const strategyName = strategyNameMatch ? strategyNameMatch[1].trim() : 'Strategy'; // Extract name or default
+           rowData.push(strategyName); // Add strategy name
+           
+           // Parameters inside parentheses
+           const parenStart = strategyLine.indexOf('('); // Find opening parenthesis
+           const parenEnd = strategyLine.lastIndexOf(')'); // Find closing parenthesis
+           if (parenStart !== -1 && parenEnd !== -1) { // If parentheses found
+             const parenContent = strategyLine.substring(parenStart + 1, parenEnd); // Extract content between parentheses
+             const params = parenContent.split(',').map(p => p.trim()); // Split parameters by comma
+             params.forEach(param => rowData.push(param)); // Add each parameter to row data
+           }
+           
+           // Symbol and timeframe from the next line
+           if (lines[strategyLineIndex + 1] && lines[strategyLineIndex + 1].includes(':')) { // If next line exists and has colon
+             const symbolLine = lines[strategyLineIndex + 1]; // Get symbol line
+             const [symbol, rest] = symbolLine.split(','); // Split by comma
+             rowData.push(symbol.trim()); // Add symbol
+             
+             const timeframeParts = rest.split('•').map(p => p.trim()); // Split timeframe parts by bullet
+             timeframeParts.forEach(part => { // For each timeframe part
+               if (part) rowData.push(part); // Add non-empty parts
+             });
+           }
+           
+           // Created date
+           const createdLine = lines.find(l => l.startsWith('Created:')); // Find created date line
+           if (createdLine) { // If created date found
+             rowData.push(createdLine); // Add to row data
+           }
+         }
+         
+         if (rowData.length > 0) { // If we have data
+           allData.push(rowData); // Add to all data array
+         }
+       }
+       
+       // Save the text of this alert as last processed
+       lastProcessedText = alertText; // Update last processed text
+       foundAndProcessed = true; // Set flag that we processed an alert
+       break; // Exit the loop
+     }
+   }
+   
+   // If we didn't find the next alert to process
+   if (!foundAndProcessed) { // If no alert was processed this iteration
+     // Try to scroll to see if there are more alerts
+     const scrolledBefore = await page.evaluate((container) => { // Get current scroll position
+       const el = document.querySelector(container); // Get scroll container
+       return el ? el.scrollTop : 0; // Return scroll position
+     }, scrollContainer);
+     
+     await page.evaluate((container) => { // Scroll down
+       const el = document.querySelector(container); // Get scroll container
+       if (el) { // If container exists
+         el.scrollBy(0, 200); // Incremental scroll instead of to bottom
+       }
+     }, scrollContainer);
+     
+     await new Promise(r => setTimeout(r, 1000)); // Wait 1 second for scroll
+     
+     const scrolledAfter = await page.evaluate((container) => { // Get new scroll position
+       const el = document.querySelector(container); // Get scroll container
+       return el ? el.scrollTop : 0; // Return scroll position
+     }, scrollContainer);
+     
+     // If we couldn't scroll further down, we're done
+     if (scrolledBefore === scrolledAfter) { // If scroll position didn't change
+       console.log('Reached end of list'); // Log completion
+       break; // Exit main loop
+     }
+   }
+ }
+ 
+ console.log(`Total alerts processed: ${totalProcessed}`); // Log final count
+
+ // Create CSV string
+ const wb = XLSX.utils.book_new(); // Create new workbook
+ const ws = XLSX.utils.aoa_to_sheet(allData); // Convert array of arrays to worksheet
+ const csv = XLSX.utils.sheet_to_csv(ws); // Convert worksheet to CSV
+ 
+ // Trigger download in browser
+ await page.evaluate((csvContent) => { // Execute in browser context
+   const blob = new Blob([csvContent], { type: 'text/csv' }); // Create blob from CSV content
+   const url = window.URL.createObjectURL(blob); // Create download URL
+   const a = document.createElement('a'); // Create anchor element
+   a.href = url; // Set download URL
+   a.download = 'tradingview_alerts.csv'; // Set filename
+   document.body.appendChild(a); // Add to DOM
+   a.click(); // Trigger download
+   document.body.removeChild(a); // Remove from DOM
+   window.URL.revokeObjectURL(url); // Clean up URL
+ }, csv);
+ 
+ console.log('CSV download started in browser!'); // Log download start
+ console.log('Extracted data:', allData); // Log all extracted data
+ 
+ await new Promise(r => setTimeout(r, 3000)); // Wait 3 seconds before closing
+ 
+ await browser.close(); // Close browser
+}
+
+downloadTradingViewLogs(); // Call main function
