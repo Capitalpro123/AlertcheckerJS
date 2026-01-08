@@ -14,11 +14,11 @@ async function downloadTradingViewLogs() { // Main function to download TradingV
  const page = await browser.newPage(); // Create new browser page
  
  console.log('Going to chart...'); // Log navigation start
- await page.goto('https://www.tradingview.com/chart/7gesKywx/?lang=en'); // Navigate to TradingView chart
+ await page.goto('https://www.tradingview.com/chart/YOURCHARTID/?lang=en'); // Navigate to TradingView chart
  
  await page.setCookie({ // Set session cookie
    name: 'sessionid', // Cookie name
-   value: 'ulljiodqjfeobmx9brj5a2odsqlfh9tf', // Session ID value
+   value: 'YOURSESSIONID', // Session ID value
    domain: '.tradingview.com' // Cookie domain
  });
 
