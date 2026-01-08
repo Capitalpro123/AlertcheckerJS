@@ -15,21 +15,17 @@ async function downloadTradingViewLogs() { // Main function to download TradingV
  
  console.log('Going to chart...'); // Log navigation start
  await page.goto('https://www.tradingview.com/chart/YOURCHARTID/?lang=en'); // Navigate to TradingView chart
- 
  await page.setCookie({ // Set session cookie
    name: 'sessionid', // Cookie name
    value: 'YOURSESSIONID', // Session ID value
    domain: '.tradingview.com' // Cookie domain
  });
-
  await page.reload(); // Reload page to apply cookie
  await new Promise(r => setTimeout(r, 5000)); // Wait 5 seconds for page to load
- 
  // Check if alerts panel is already open
  console.log('Checking if alerts panel is open...'); // Log checking status
  const alertsPanelSelector = 'body > div.js-rootresizer__contents > div > div.layout__area--right > div > div.widgetbar-pages > div.widgetbar-pagescontent > div.widgetbar-page.active'; // Selector for active alerts panel
  const isAlertsPanelOpen = await page.$(alertsPanelSelector); // Check if alerts panel exists
- 
  if (!isAlertsPanelOpen) { // If alerts panel is not open
    console.log('Alerts panel is closed, opening it...'); // Log opening alerts
    await page.click('body > div.js-rootresizer__contents > div > div.layout__area--right > div > div.widgetbar-tabs > div > div > div > div > button:nth-child(2)'); // Click alerts button
@@ -37,24 +33,19 @@ async function downloadTradingViewLogs() { // Main function to download TradingV
  } else {
    console.log('Alerts panel is already open'); // Log that panel is already open
  }
- 
  console.log('Clicking list tab...'); // Log clicking list tab
  await page.click('#list'); // Click list tab
  await new Promise(r => setTimeout(r, 2000)); // Wait 2 seconds for list to load
-
  const alertSelector = 'body > div.js-rootresizer__contents > div > div.layout__area--right > div > div.widgetbar-pages > div.widgetbar-pagescontent > div.widgetbar-page.active > div > div.widgetbar-widgetbody > div > div.wrapper-G90Hl2iS > div.list-G90Hl2iS > div > div'; // Selector for alert items
  const scrollContainer = 'body > div.js-rootresizer__contents > div > div.layout__area--right > div > div.widgetbar-pages > div.widgetbar-pagescontent > div.widgetbar-page.active > div > div.widgetbar-widgetbody > div > div.wrapper-G90Hl2iS > div.list-G90Hl2iS'; // Selector for scrollable container
- 
  const allData = []; // Array to store all extracted data
  let totalProcessed = 0; // Counter for total processed alerts
  let lastProcessedText = ''; // Store text of last processed alert
- 
  while (true) { // Main processing loop
    const alerts = await page.$$(alertSelector); // Get all visible alert elements
    console.log(`Visible alerts: ${alerts.length}`); // Log count of visible alerts
    
    let foundAndProcessed = false; // Flag to track if we processed an alert this iteration
-   
    // Find the alert to process
    for (let i = 0; i < alerts.length; i++) { // Loop through visible alerts
      const alertText = await alerts[i].evaluate(el => el.innerText); // Get alert text
@@ -65,7 +56,6 @@ async function downloadTradingViewLogs() { // Main function to download TradingV
        
        totalProcessed++; // Increment processed counter
        console.log(`Processing alert ${totalProcessed}...`); // Log processing status
-       
        await alerts[i].hover(); // Hover over the alert
        await new Promise(r => setTimeout(r, 1500)); // Wait 1.5 seconds for tooltip
 
@@ -82,7 +72,6 @@ async function downloadTradingViewLogs() { // Main function to download TradingV
        if (tooltipText) { // If tooltip text found
          const lines = tooltipText.split('\n').filter(l => l.trim()); // Split into lines and remove empty ones
          const rowData = []; // Array for this alert's data
-         
          // Find the alert name (it's the first text after many initial lines)
          // Look for the line with Strategy to orient ourselves
          const strategyIndex = lines.findIndex(l => l.includes('Strategy') && l.includes('(')); // Find Strategy line
